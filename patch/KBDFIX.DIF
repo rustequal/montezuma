@@ -1,0 +1,448 @@
+PATCH 1.0
+;
+FILE PATCH BOOT.ASM
+OLD 32135 9B43E937
+NEW 32143 5121B19C
+@ 318
++ 23
+SNDINI
+        PUBLIC 
+@ 535
+- 29
+FRMWAIT:NEAR
+        EXTRN  
+@ 620
++ 29
+KBFRAME:NEAR
+        EXTRN  
+@ 1147
++ 28
+SYSINI:NEAR
+        EXTRN  
+@ 6134
+- 55
+62h at SNDAPI and INT 67h at
+; PUTMAP, starts the game
++ 36
+09h, 62h and 67h, starts the game
+;
+@ 6235
+- 25
+
+; far RET at 048Ah pops
++ 25
+ far RET at 048Ah pops
+;
+@ 7874
+- 75
+NDINI                   ; 0406  take over INT 08h and run the PIT at 100 Hz
++ 62
+YSINI                   ; 0406  keyboard handler, sound, timer
+@ 9607
+- 7
+FRMWAIT
++ 7
+KBFRAME
+@ 9658
+- 36
+: this is what holds the game's pace
++ 24
+ and snapshot key states
+@ 21685
+- 4
+TART
++ 5
+YSINI
+END BOOT.ASM
+;
+FILE PATCH JOYSTK.ASM
+OLD 21551 1806C51F
+NEW 21796 B2368BD2
+@ 398
++ 23
+KEYTAB
+        PUBLIC 
+@ 450
+- 12
+LASTKEY:WORD
++ 11
+KBHELD:NEAR
+@ 1052
++ 11
+with ASCII 
+@ 1142
++ 75
+.
+;                 KEYLOOK uses only high byte from first word, scan code
+@ 3527
+- 18
+pick LASTKEY apart
++ 28
+assemble command from KBSTAT
+@ 20321
+- 82
+Find the scan code in KEYTAB and hand back the action code.
+;
+; ENTRY  : LASTKEY
++ 133
+Assemble action code from held KEYTAB keys:
+; OR direction bytes, AND button bytes -- active-low button logic.
+;
+; ENTRY  : KBSTAT
+@ 20437
++ 4
+, SI
+@ 20571
+- 64
+ax, LASTKEY              ; 5FE2  AX -- scan code of the last key
++ 74
+dx, 10h                  ; 5FE2  DH=0 no direction, DL=10h button released
+@ 20692
+- 29
+table of the redefinable keys
++ 20
+remappable key table
+@ 20778
+- 151
+records
+LKEYLO1:
+        cmp     ax, [bx]                 ; 5FEB  scan code of this record
+        je      LKEYLO3                  ; 5FED  found it
++ 444
+entries
+LKEYLO1:
+        call    KBHELD                   ; 5FEB  is entry key held
+        jae     LKEYLO2                  ; 5FEE  CF=0 -- released, ignore entry response
+        or      dh, [bx+3]               ; 5FF0  combine directions via OR
+        and     dl, [bx+2]               ; 5FF3  button active low: combine via AND
+                                                                                                
+LKEYLO2:
+@ 20976
+- 33
+EF  records run four bytes apiece
++ 18
+F6  4-byte entries
+@ 21057
+- 121
+2  records not used up yet
+        mov     ax, 10h                  ; 5FF4  10h -- no direction and no buttons
+LKEYLO2:
++ 100
+9  more entries remaining
+        mov     ax, dx                   ; 5FFB  AX -- assembled response
+@ 21226
+- 32
+7  DX off the stack, pushed back
++ 24
+D  DX from stack, pushed
+@ 21317
+- 234
+8  return: the answer is in AX
+LKEYLO3:
+        mov     ax, [bx+2]               ; 5FF9  second word of the record -- the answer
+        jmp     short LKEYLO2            ; 5FFC  off to the common exit
+
+CSEG    ENDS
+        END
+
++ 56
+E  return: response in AX
+
+CSEG    ENDS
+        END
+
+END JOYSTK.ASM
+;
+FILE ADD KEYBRD.ASM
+NEW 11557 F3A9B4F4
++ 11557
+        PAGE  60,132
+        TITLE KEYBRD -- KEY STATE OFF IRQ1
+        INCLUDE MX4C.INC
+
+CSEG    SEGMENT PARA PUBLIC 'CODE'
+        ASSUME CS:CSEG, DS:CSEG, ES:CSEG, SS:CSEG
+
+        PUBLIC KBFRAME
+        PUBLIC KBHELD
+        PUBLIC SYSINI
+        EXTRN  FRMWAIT:NEAR
+        EXTRN  KEYTAB:WORD
+        EXTRN  SNDINI:NEAR
+
+;=======================================================================
+; KEYBRD.ASM -- KEY STATE OFF IRQ1
+;
+; The handler goes in ahead of the BIOS one: it takes the code off port 60h,
+; fixes up that key's entry in KBSTAT and hands off to the old vector. The
+; port B strobe, the EOI, the ASCII translation and the buffer are all left
+; to the BIOS, so INT 16h, Ctrl-Alt-Del and the lock keys work as before.
+;
+; Once a frame KBFRAME takes a snapshot of KBSTAT, and for the whole frame
+; KEYLOOK answers out of it -- exactly the way a key used to sit in LASTKEY
+; for a whole frame before this patch.
+;
+; The patch adds to three modules of the image: BOOT.ASM calls SYSINI instead
+; of SNDINI and KBFRAME instead of FRMWAIT, and JOYSTK.ASM calls KBHELD from
+; KEYLOOK. Those modules also need PUBLIC KEYTAB, PUBLIC SNDINI and the matching EXTRNs.
+;=======================================================================
+
+;-----------------------------------------------------------------------
+; CONSTANTS OF THE PATCH
+;-----------------------------------------------------------------------
+SCAN_MAX     EQU 80h        ; scan codes held in KBSTAT: 00h..7Fh
+SCAN_REL     EQU 80h        ; bit 7 of a code from the keyboard: a release
+SCAN_MSK     EQU 7Fh        ; scan code with the release bit taken off
+KB_DOWN      EQU 1          ; bit 0 of a KBSTAT entry: the key is down
+KB_HIT       EQU 2          ; bit 1 of a KBSTAT entry: pressed since the last snapshot
+KB_CMD       EQU 4          ; bit 2 of a KBSTAT entry: this frame's answer
+KB_NDOWN     EQU 0FEh       ; complement of KB_DOWN within the byte
+KT_SCAN      EQU 1          ; +01 of a KEYTAB entry: the scan code
+KT_SIZE      EQU 4          ; bytes to a KEYTAB entry
+KT_CNT       EQU 7          ; entries in KEYTAB
+
+;-----------------------------------------------------------------------
+; KEY STATE  (7EF0..7F73, 132 bytes)
+;
+; KBSTAT -- one byte per scan code 00h..7Fh:
+;
+;   bit 0  KB_DOWN  the key is down
+;   bit 1  KB_HIT   the key was pressed since the last snapshot
+;   bit 2  KB_CMD   this frame's answer
+;
+; Bits 0 and 1 are set by the handler, bit 2 by the snapshot. KEYLOOK looks
+; at bit 2 and nothing else, so the answer holds until the next snapshot:
+; both player steps of the frame -- the two PLRTICK calls out of ST_PL1 and
+; as many again out of ST_PL2 -- get one and the same thing. A press of any
+; length whatever buys exactly one frame of movement, while holding the key
+; buys every frame for as long as bit 0 stays set.
+;
+; Bit 1 is there for a press shorter than a frame: it fits entirely between
+; two snapshots, and by the nearer of the two bit 0 is already clear. Bit 1
+; goes up only together with bit 0 and only from a clear bit 0, so typematic
+; repeat does not count as a second press.
+;
+; A release clears bit 0 and leaves bits 1 and 2 alone: the frame in which
+; the key came up is played out to the end, and the next snapshot gives no
+; answer at all.
+;
+; KBFRAME snapshots only the seven KEYTAB entries; on every other entry
+; bit 1 is never cleared.
+;
+; The E0h prefix code lands in entry 60h and E1h in entry 61h, both of them
+; as a release: bit 7 is set in each. The codes that follow a prefix land in
+; the entries of their own scan codes.
+;
+; 7F70h OLDK09 -- the old INT 09h vector, offset and segment back to back:
+;                 the far jump at the end of KBDISR goes there
+;-----------------------------------------------------------------------
+KBSTAT  DB    SCAN_MAX DUP(0)            ; 7EF0  scan codes 00h..7Fh, one byte apiece
+OLDK09  DW    0                          ; 7F70  old INT 09h vector, offset
+OLDK09S DW    0                          ; 7F72  old INT 09h vector, segment
+
+;=======================================================================
+; THE HANDLER, THE SNAPSHOT AND THE SETUP
+;=======================================================================
+
+;-----------------------------------------------------------------------
+; SYSINI -- Put the keyboard handler in and go on to SNDINI.
+;
+; ALTERS : AX, BX, DI
+; CALLED BY: START
+;-----------------------------------------------------------------------
+SYSINI:
+        call    KBDINI                   ; 7F74  put our own keyboard handler in
+        jmp     SNDINI                   ; 7F77  sound and timer; its return goes straight back to START
+
+;-----------------------------------------------------------------------
+; KBDINI -- Keep the INT 09h vector and put KBDISR in its place.
+;
+; EXIT   : OLDK09, OLDK09S, the INT 09h vector
+; ALTERS : AX
+; CALLED BY: SYSINI
+;-----------------------------------------------------------------------
+KBDINI:
+        push    es                       ; 7F7A  ES comes back before we leave
+        mov     ax, 0                    ; 7F7B  AX=0 -- segment of the interrupt vector table
+        mov     es, ax                   ; 7F7E  ES = 0: the interrupt vector table
+        cli                              ; 7F80  the vector is changed with interrupts off
+        mov     ax, es:[VEC09]           ; 7F81  AX -- old offset of the INT 09h vector
+        mov     OLDK09, ax               ; 7F85  the old offset is saved away
+        mov     ax, es:[VEC09+2]         ; 7F88  AX -- old segment of the INT 09h vector
+        mov     OLDK09S, ax              ; 7F8C  the old segment is saved away
+        mov     ax, OFFSET KBDISR        ; 7F8F  AX -- offset of our own IRQ1 handler
+        mov     es:[VEC09], ax           ; 7F92  offset: INT 09h -> KBDISR
+        mov     ax, cs                   ; 7F96  CS -- segment the handler lives in
+        mov     es:[VEC09+2], ax         ; 7F98  segment half of the INT 09h vector
+        sti                              ; 7F9C  interrupts are allowed again
+        pop     es                       ; 7F9D  ES restored
+        ret                              ; 7F9E  return to SYSINI
+
+;-----------------------------------------------------------------------
+; KBDISR -- INT 09h ISR. Code from the keyboard -> KBSTAT, then on to the BIOS.
+;
+; Port 60h is read but not cleared: the latch holds the code until the strobe
+; the old handler sends. That handler also issues the EOI and fills the buffer.
+;
+; ENTRY  : port 60h, KBSTAT
+; EXIT   : KBSTAT
+; ALTERS : nothing
+; CALLED BY: through the interrupt vector
+;-----------------------------------------------------------------------
+KBDISR:
+        SAVEREG <ax,bx,ds>               ; 7F9F  macro
+        mov     ax, cs                   ; 7FA2  CS -- the one and only segment of the image
+        mov     ds, ax                   ; 7FA4  DS = CS: the module's own table
+        in      al, PORT60               ; 7FA6  AL -- code from the keyboard; the BIOS will clear the latch
+        mov     bl, al                   ; 7FA8  BL -- code from the keyboard
+        and     bl, SCAN_MSK             ; 7FAA  scan code with the release bit taken off
+        mov     bh, 0                    ; 7FAD  BH=0: BX -- the scan code as an index into KBSTAT
+        test    al, SCAN_REL             ; 7FAF  bit 7 of the code marks a release
+        jne     LKBDIS1                  ; 7FB1  bit set -- the key came up
+        test    KBSTAT[bx], KB_DOWN      ; 7FB3  does the key already count as down?
+        jne     LKBDIS2                  ; 7FB8  yes -- this is typematic repeat, leave the entry alone
+        or      KBSTAT[bx], KB_DOWN+KB_HIT ; 7FBA  down, and the snapshot has not had it yet
+        jmp     short LKBDIS2            ; 7FBF  the code is sorted out
+LKBDIS1:
+        and     KBSTAT[bx], KB_NDOWN     ; 7FC1  the down bit is cleared; this frame's answer is untouched
+LKBDIS2:
+        RESTREG <ds,bx,ax>               ; 7FC6  macro
+        jmp     DWORD PTR OLDK09         ; 7FC9  the BIOS takes it from here: strobe, EOI, buffer
+
+;-----------------------------------------------------------------------
+; KBFRAME -- Pace out the frame and snapshot the seven KEYTAB keys.
+;
+; This frame's answer goes up if the key is down or was pressed since the last
+; snapshot; the was-pressed bit is then cleared. The update runs with interrupts
+; off: a code from the keyboard could arrive between the read and the write.
+;
+; ENTRY  : KEYTAB, KBSTAT
+; EXIT   : KBSTAT
+; ALTERS : nothing
+; CALLED BY: MAINLP
+;-----------------------------------------------------------------------
+KBFRAME:
+        call    FRMWAIT                  ; 7FCD  pace out the length of the frame
+        SAVEREG <ax,bx,cx,si>            ; 7FD0  macro
+        pushf                            ; 7FD4  the caller's interrupt flag
+        cli                              ; 7FD5  the snapshot is taken with IRQ1 kept out of it
+        mov     bx, OFFSET KEYTAB        ; 7FD6  BX -- table of the redefinable keys
+        mov     cx, KT_CNT               ; 7FD9  seven records
+LKBFRA1:
+        mov     al, [bx+KT_SCAN]         ; 7FDC  AL -- scan code of the record
+        xor     ah, ah                   ; 7FDF  AH=0: the whole scan code now sits in AX
+        mov     si, ax                   ; 7FE1  SI -- the scan code as an index into KBSTAT
+        mov     al, KBSTAT[si]           ; 7FE3  AL -- the key's entry
+        and     al, KB_DOWN+KB_HIT       ; 7FE7  down, or pressed since the last snapshot?
+        je      LKBFRA2                  ; 7FE9  neither one: this frame's answer is no
+        and     al, KB_DOWN              ; 7FEB  the new entry keeps nothing but the down bit
+        or      al, KB_CMD               ; 7FED  and this frame's answer is yes
+LKBFRA2:
+        mov     KBSTAT[si], al           ; 7FEF  the entry is brought up to date, the was-pressed bit cleared
+        add     bx, KT_SIZE              ; 7FF3  records run four bytes apiece
+        loop    LKBFRA1                  ; 7FF6  records not used up yet
+        popf                             ; 7FF8  the interrupt flag is back the way it was
+        RESTREG <si,cx,bx,ax>            ; 7FF9  macro
+        ret                              ; 7FFD  return to MAINLP
+
+;-----------------------------------------------------------------------
+; KBHELD -- Report whether a command is coming in on the key of KEYTAB entry BX.
+;
+; ENTRY  : BX -- a KEYTAB entry, KBSTAT
+; EXIT   : CF
+; ALTERS : AX, SI
+; CALLED BY: KEYLOOK
+;-----------------------------------------------------------------------
+KBHELD:
+        mov     al, [bx+KT_SCAN]         ; 7FFE  AL -- scan code of the KEYTAB entry
+        xor     ah, ah                   ; 8001  AH=0: the whole scan code now sits in AX
+        mov     si, ax                   ; 8003  SI -- the scan code as an index into KBSTAT
+        test    KBSTAT[si], KB_CMD       ; 8005  this frame's answer for that key
+        je      LKBHEL1                  ; 800A  no answer
+        stc                              ; 800C  CF=1: a command is coming in on this key
+        ret                              ; 800D  return: the answer is in CF
+LKBHEL1:
+        clc                              ; 800E  CF=0: no command
+        ret                              ; 800F  return: the answer is in CF
+
+CSEG    ENDS
+        END
+
+END KEYBRD.ASM
+;
+FILE PATCH MAKEIT.BAT
+OLD 816 062F28F1
+NEW 848 37CE3E83
+@ 517
++ 25
+masm KEYBRD,KEYBRD,NUL;
+
+@ 701
++ 7
++KEYBRD
+END MAKEIT.BAT
+;
+FILE PATCH MX4C.INC
+OLD 26264 72120620
+NEW 26585 E9911DA2
+@ 2959
++ 45
+0       EQU 0060h      ; keyboard data
+PORT6
+@ 4513
++ 59
+09        EQU 9*4        ; INT 09h: keyboard interrupt
+VEC
+@ 18868
++ 217
+; KBSTAT    7EF0h   KEYBRD.ASM   key: bit 0 held, bit 1 pressed, bit 2 acknowledge
+; OLDK09    7F70h   KEYBRD.ASM   previous INT 09h vector, offset
+; OLDK09S   7F72h   KEYBRD.ASM   previous INT 09h vector, segment
+
+END MX4C.INC
+;
+FILE PATCH MX4C.TXT
+OLD 5961 5E617736
+NEW 6233 5165139F
+@ 246
++ 53
+        with keyboard control patch (32,528 bytes)
+;
+@ 1176
++ 119
+Patch installs ahead of INT 09h handler and maintains
+;     the held keys table; BIOS handles everything else.
+;   - 
+@ 3717
+- 11
+key polling
++ 6
+KEYDEF
+@ 4050
++ 53
+ 7EF0h..800Fh   patch: key states and IRQ1 handler
+;
+@ 4466
++ 1
+
+@ 5274
+- 1
+D
++ 1
+E
+@ 5888
++ 51
+ KEYBRD.ASM    7EF0h..800Fh  key states via IRQ1
+;
+END MX4C.TXT
+;
+FILE PATCH TIMING.ASM
+OLD 4847 17BD3A15
+NEW 4848 A2323370
+@ 1579
+- 6
+MAINLP
++ 7
+KBFRAME
+END TIMING.ASM
+END PATCH 7

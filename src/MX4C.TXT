@@ -1,0 +1,121 @@
+;=======================================================================
+;
+;        M O N T E Z U M A `S   R E V E N G E
+;        Parker Brothers, 1984 -- the IBM PC / CGA version
+;
+;        Reconstructed listing of MX4C.COM (32228 bytes)
+;
+;=======================================================================
+;
+; WHAT THIS IS
+;   The result of reverse engineering the binary image.
+;   The original symbol table did not survive --
+;   the assembler throws it away at build time, and the .COM
+;   format has no room for debug information. Every name,
+;   macro and comment here was written fresh during the teardown.
+;
+;   Build it with MASM 1.25 through MAKEIT.BAT
+;
+; WHAT THE CODE ITSELF SHOWS
+;   - Written by hand. Not one PUSH BP/MOV BP,SP prologue
+;     across every routine in the image, not one ADD SP,n
+;     stack cleanup, hundreds of absolute-address references
+;     against three dozen through [BP+n]. No compiler
+;     had a hand in this.
+;   - Video mode 4: CGA 320x200, 4 colors, palette 0.
+;   - Timer reprogrammed from 18.2 to 100 Hz.
+;   - Vectors 62h and 67h taken over for a private API:
+;     sound and map output.
+;   - Graphics come in two layers: an 8x8 tile background plus
+;     sprites with background save and masked transparency.
+;
+; THE ARCHITECTURE IN TWO PARAGRAPHS
+;   The screen is described by the SCRMAP map: 40x25 bytes, each
+;   byte a tile number. A room is not held ready-made:
+;   BLDMAP builds it into SCRMAP from a compact description,
+;   then MIRROR flips it left to right when that is called for
+;   (half the rooms in the game are mirrors of others). PUTMAP
+;   puts the finished map out through INT 67h; within a frame
+;   only the dirty rectangles off the list are redrawn, and the
+;   whole screen only when the room changes.
+;
+;   Everything that moves is drawn on top: DRWSPR copies the
+;   background bytes into OBJTAB, lays the bitmap over them
+;   through the MSKTAB mask table and writes to video RAM;
+;   ERSSPR puts the saved background back. There is no double
+;   buffer -- there is nowhere to keep one. Collisions are worked
+;   out not per pixel but from SOLIDS: a list of horizontal runs
+;   of solid floor, built once on entry to a room by scanning
+;   SCRMAP.
+;
+;=======================================================================
+
+;-----------------------------------------------------------------------
+; MEMORY MAP OF THE .COM IMAGE
+;
+; 0100h..0102h   JMP START
+; 0103h..03CEh   stack, grows down; also the unused zero region
+; 03CFh..03E1h   global variables (see the EQUs below)
+; 03E2h..05CDh   startup and the sound subsystem
+; 05CEh..06D4h   graphics initialization
+; 06E0h..07C6h   OBJFRM, OBJTBL and their neighbors
+; 07C7h..0FF3h   the room builder
+; 1000h..108Ch   PUTMAP -- INT 67h ISR
+; 1090h..11CCh   ROWBUF and the working cells
+; 11CDh..15B4h   SCRMAP -- the 40x25 screen map
+; 15B5h..2464h   TILES -- 235 tiles of 16 bytes
+; 2465h..2547h   mirror pair and element description tables
+; 2548h..260Fh   HUDMAP -- status panel template
+; 34A0h..369Fh   SOLIDS -- floor-span list of the current room
+; 36A0h..3749h   rectangle output and the floor-span list
+; 3750h..38EFh   cycling of the animated tiles
+; 38F0h..3B7Fh   working copy of the animated tiles
+; 3B80h..3BBFh   ANIMTB -- animation tables
+; 3BE0h..4985h   FRAMES -- sprite frame bitmaps
+; 4BA0h..5B9Fh   OBJTAB -- saved background, 16 x 100h, zeros in the file
+; 5BA0h..5C9Fh   MSKTAB -- 256 bytes of transparency masks
+; 5CA0h..5DE5h   sprite output
+; 5DF0h..5FFDh   joystick, keys, new-game reset
+; 6000h..60B1h   neighboring tiles and SCANTIL
+; 60C0h..6503h   state machine, handlers, key polling
+; 6510h..7485h   player state, physics, score, items
+; 7490h..77A1h   object turns and the four behaviors
+; 77B0h..7979h   tunes and the sound dispatcher
+; 79A5h..79BCh   SNDTAB -- pointers to the tunes
+; 79C0h..7A2Dh   frame cost and frame pacing
+; 7A31h..7E2Fh   interface strings, run together, no terminators
+;-----------------------------------------------------------------------
+
+;-----------------------------------------------------------------------
+; WHAT THE LISTING IS BUILT FROM
+;
+; A .COM image is flat: whatever order things lie in the file is
+; the order they assemble in.
+; So the includes run strictly by rising address, and every
+; file
+; covers one unbroken stretch of the image. The seams fall where
+; zero padding to a paragraph boundary sits ahead of them.
+; 
+; MX4C.INC      --            macros, named constants, structures
+; BOOT.ASM      0100h..06D4h  entry, main loop, sound driver, initialization
+; ROOMBLD.ASM   06E0h..0FF3h  object table and the room builder
+; PUTMAP.ASM    1000h..108Ch  tile map output, INT 67h ISR
+; SCRDAT.ASM    1090h..260Fh  map variables, SCRMAP, tiles, elements, panel
+; ROOMDAT.ASM   2610h..369Fh  descriptions of all 99 rooms
+; RECTS.ASM     36A0h..3749h  partial redraw and the floor-span list
+; TILANI.ASM    3750h..38EFh  cycling the animated tiles
+; ANIMDAT.ASM   38F0h..3BDFh  working tiles and animation tables
+; FRAMES.ASM    3BE0h..5C9Fh  sprite frames, background buffer, masks
+; SPRDRW.ASM    5CA0h..5DE5h  sprite output
+; JOYSTK.ASM    5DF0h..5FFDh  joystick, keys, new-game reset
+; SCANTIL.ASM   6000h..60B1h  neighboring tiles
+; STATES.ASM    60C0h..6503h  the game state machine
+; PLAYER.ASM    6510h..6C5Bh  player state and physics
+; ITEMS.ASM     6C60h..7485h  score, items, collisions, panel
+; ENEMY.ASM     7490h..77A1h  object turns and the four behaviors
+; SOUND.ASM     77B0h..79BCh  tunes and the sound dispatcher
+; TIMING.ASM    79C0h..7A2Dh  frame length
+; TEXT.ASM      7A30h..7DA9h  strings, menu, screens
+; KEYSCR.ASM    7DB0h..7EE3h  the define-keys screen
+; ELMCOD.ASM    --            element and tile codes, lays down no bytes
+;-----------------------------------------------------------------------
