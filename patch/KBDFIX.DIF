@@ -402,7 +402,7 @@ VEC
 END MX4C.INC
 ;
 FILE PATCH MX4C.TXT
-OLD 5961 5E617736
+OLD 5962 6C097AD4
 NEW 6233 5165139F
 @ 246
 + 53
@@ -422,15 +422,12 @@ KEYDEF
 + 53
  7EF0h..800Fh   patch: key states and IRQ1 handler
 ;
-@ 4466
-+ 1
-
-@ 5274
+@ 5275
 - 1
 D
 + 1
 E
-@ 5888
+@ 5889
 + 51
  KEYBRD.ASM    7EF0h..800Fh  key states via IRQ1
 ;
