@@ -1,4 +1,4 @@
-# Montezuma's Revenge (IBM PC CGA, 1984) — Reconstructed Source
+# Montezuma's Revenge (IBM PC CGA, 1984) — Reconstructed Game Source Code
 
 A reconstruction of the assembly source for `MX4C.COM`, the CGA release of
 Montezuma's Revenge from the original Parker Brothers boot floppy. Assembled with
