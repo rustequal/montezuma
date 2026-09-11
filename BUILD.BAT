@@ -1,4 +1,3 @@
-@echo off
 if "%1"=="" goto clean
 if "%1"=="KBD" goto kbd
 if "%1"=="kbd" goto kbd
