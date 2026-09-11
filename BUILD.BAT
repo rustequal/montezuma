@@ -1,3 +1,4 @@
+@echo off
 if "%1"=="" goto clean
 if "%1"=="KBD" goto kbd
 if "%1"=="kbd" goto kbd
@@ -29,7 +30,9 @@ if errorlevel 1 goto failed
 del PATCH.COM
 del KBDFIX.DIF
 :make
+@echo on
 call MAKEIT.BAT
+@echo off
 cd ..
 echo.
 echo Done: BUILD\MX4C.COM
