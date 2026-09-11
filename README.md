@@ -1,4 +1,4 @@
-# Montezuma's Revenge (IBM PC, 1984) — Reconstructed Source
+# Montezuma's Revenge (IBM PC CGA, 1984) — Reconstructed Source
 
 A reconstruction of the assembly source for `MX4C.COM`, the CGA release of
 Montezuma's Revenge from the original Parker Brothers boot floppy. Assembled with
@@ -6,7 +6,7 @@ Microsoft MASM 1.25, the listing in `src/` produces a file identical to the orig
 byte for byte — all 32,228 of them. Alongside it, `docs/` carries a 93-page technical
 book on how the game works, and `patch/` an optional fix for the keyboard handling.
 
-Montezuma's Revenge was designed and originally programmed by **Robert Jaeger**. The
+Montezuma's Revenge was designed and originally programmed by [**Robert Jaeger**](https://normaldistribution.com/). The
 game is his; this repository only takes apart one conversion of it.
 
 ## The book
